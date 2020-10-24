@@ -1,20 +1,25 @@
 # Author: Mees Altena, 24-04-2020
+# Rev: Matteo Altomare, George Adrian Munteanu 10-10-2020
 # Licence: MIT 
 import re
 import os
 import requests
 import folium
+from folium import plugins# big map                                                                                                                                                                                                         
 from folium.plugins import HeatMap
+from folium.plugins import MarkerCluster
 import ipinfo
 import sys
 import time
 from collections import Counter
 import operator
 
+# import plugin from folium
+mini_map = plugins.MiniMap(toggle_display=True)# add the mini map to the big map
 # Set a default api key here if you're not using sys arguments.
 api_key = ""
 
-# Filename of the txt with the output of: grep "authentication failure\| Failed password" /var/log/auth.log > failed_attempts.txt
+# Filename of the txt with the output of: ip, port and protocol
 try:
     filename = sys.argv[1]
 except IndexError:
@@ -65,6 +70,8 @@ def read_file_get_ips(filename):
         
         print('Read file ' + filename + ' and got ' + str(len(ips)) + ' login attempts.')
         return ips
+# read the file, split on new lines into array, return for each line  ip, port and protocol
+
 
 # Returns a list with the items in the passed list that occur at least min_attempts times.
 def get_applicable_ips(ips):
@@ -83,24 +90,46 @@ def get_ip_coordinates(ips):
     # split the list of ips into batches of 100 (or less, if the list is smaller)
     batches = [ips[x:x+100] for x in range(0, len(ips), 100)]
     coords = []
+    coordinates_with_ip = []
+    counter = 0
     start = time.process_time()
+    print(batches)
     for batch in batches:
         # append /loc to each ip to get only the location info from the api
         b = [x + "/loc" for x in batch]
         # send the request to the api and get the values as a list
-        v = list(ip_handler.getBatchDetails(b).values())
+        v = list(ip_handler.getBatchDetails(b).values()) 
         # split the coords into a list with lat and lon if type is not dict, because the type of an error response is a dict
         c = [x.split(',') for x in v if not isinstance(x, dict)]
+        internal_counter=0 
+
+        
+        for coordinate in c:
+            coordinates_with_ip.append(coordinate.copy())
+            coordinates_with_ip[counter].append(batch[internal_counter])
+            counter = counter + 1
+            internal_counter= internal_counter +1
+        
+        #folium.Marker(coords)
         coords.extend(c)
         print("Fetched " + str(len(coords)) + "/" + str(len(ips)) + " coordinates in " + str(round(time.process_time() - start, 3)) + " seconds.")
-    
-    return coords       
+        
+    return coords, coordinates_with_ip   
 
-def generate_and_save_heatmap(coords):        
+def generate_and_save_heatmap(coords, coordinates_with_ip):        
     # generate and save heatmap
     m = folium.Map(tiles="OpenStreetMap", location=[20,10], zoom_start=2)
-    # mess around with these values to change how the heatmap looks
-    HeatMap(data = coords, radius=15, blur=20, max_zoom=2, max_val=2).add_to(m)
+    fg=folium.FeatureGroup(name='My Points', show=False)
+    marker_cluster = MarkerCluster(name = 'Marker').add_to(m)
+    mini_map = plugins.MiniMap(toggle_display=True)# add the mini map to the big map                                                                                                                                                            
+    m.add_child(mini_map) 
+    HeatMap(data= coords, radius=15, min_opacity = 0.1,  blur=20, max_zoom=3, max_val=50, name = 'Heatmap').add_to(m)
+    
+    # I can add marker one by one on the map
+    for latlon in coordinates_with_ip:
+        folium.Marker(location= latlon[0:2], popup='Source ip='+ str(latlon[2]), tooltip = "apility.io or virustotal ip API",  icon=folium.Icon(color='red', icon='info-sign')).add_to(marker_cluster)
+       
+    folium.LayerControl().add_to(m)    
     m.save(heatmap_filename) 
     print('Done. heatmap saved as ' + heatmap_filename)  
     return
@@ -108,7 +137,7 @@ def generate_and_save_heatmap(coords):
 def main():    
     ips = read_file_get_ips(filename)
     ips_count = get_applicable_ips(ips)
-    coords = get_ip_coordinates(ips_count)
-    generate_and_save_heatmap(coords)
+    coords, coordinates_with_ip = get_ip_coordinates(ips_count)
+    generate_and_save_heatmap(coords, coordinates_with_ip)
 
 main()
