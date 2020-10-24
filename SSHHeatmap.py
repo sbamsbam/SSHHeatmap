@@ -1,5 +1,5 @@
 # Author: Mees Altena, 24-04-2020
-# Rev: Matteo Altomare, George Adrian Munteanu 10-10-2020
+# Rev: Emme A, GAMun 10-10-2020
 # Licence: MIT 
 import re
 import os
