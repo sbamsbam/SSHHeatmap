@@ -8,7 +8,6 @@ import folium
 from folium import plugins# big map                                                                                          
                                                                                                                              
 from folium.plugins import HeatMap                                                                                           
-from folium.plugins import MarkerCluster                                                                                     
 import ipinfo                                                                                                                
 import sys                                                                                                                   
 import time                                                                                                                  
@@ -95,19 +94,23 @@ dy.")
     counter = 0                                                                                                              
     start = time.process_time()                                                                                              
     for batch in batches:                                                                                                    
-        # send the request to the api and get the values                                                                     
-        api_batch_results = ip_handler.getBatchDetails(batch).values()                                                       
-        for element in api_batch_results:                                                                                    
-            location = element.get('loc')                                                                                    
-            if location is not None:                                                                                         
-                ip = element.get('ip')                                                                                       
-                # split the coords into a list with lat and lon                                                              
-                coords.append(location.split(','))                                                                           
-                # split the coords into a list with lat and lon and append the ip address, in order to add the Marker        
-                list_location = location.split(',')                                                                          
-                list_location.append(ip)                                                                                     
-                coordinates_with_ip.append(list_location)                                                                    
+        # append /loc to each ip to get only the location info from the api                                                  
+        b = [x + "/loc" for x in batch]                                                                                      
+        # send the request to the api and get the values as a list                                                           
+        v = list(ip_handler.getBatchDetails(b).values())                                                                     
+        # split the coords into a list with lat and lon if type is not dict, because the type of an error response is a dict 
+        c = [x.split(',') for x in v if not isinstance(x, dict)]                                                             
+        internal_counter=0                                                                                                   
                                                                                                                              
+                                                                                                                             
+        for coordinate in c:                                                                                                 
+            coordinates_with_ip.append(coordinate.copy())                                                                    
+            coordinates_with_ip[counter].append(batch[internal_counter])                                                     
+            counter = counter + 1                                                                                            
+            internal_counter= internal_counter +1                                                                            
+                                                                                                                             
+        #folium.Marker(coords)                                                                                               
+        coords.extend(c)                                                                                                     
         print("Fetched " + str(len(coords)) + "/" + str(len(ips)) + " coordinates in " + str(round(time.process_time() - star
 t, 3)) + " seconds.")                                                                                                        
                                                                                                                              
@@ -116,19 +119,31 @@ t, 3)) + " seconds.")
 def generate_and_save_heatmap(coords, coordinates_with_ip):                                                                  
     # generate and save heatmap                                                                                              
     m = folium.Map(tiles="OpenStreetMap", location=[20,10], zoom_start=2)                                                    
-    fg=folium.FeatureGroup(name='My Points', show=False)                                                                     
-    marker_cluster = MarkerCluster(name = 'Marker').add_to(m)                                                                
+    #pointgeo = folium.GeoJson(m,name='group on map', show=False)                                                            
     mini_map = plugins.MiniMap(toggle_display=True)# add the mini map to the big map                                         
                                                                                                                              
     m.add_child(mini_map)                                                                                                    
-    HeatMap(data= coords, radius=15, min_opacity = 0.1,  blur=20, max_zoom=3, max_val=50, name = 'Heatmap').add_to(m)        
+    folium.LayerControl()                                                                                                    
+    #m.add_child(folium.ClickForMarker(popup='Source IP address Location'))                                                  
+    # mess around with these values to change how the heatmap looks                                                          
+    #HeatMap(data= coords, radius=3, blur=5, max_zoom=3, max_val=2).add_to(m)                                                
+    HeatMap(data= coords, radius=20, min_opacity = 0.1,  blur=5, max_zoom=3, max_val=50).add_to(m)                           
+    #m.add_child(folium.LayerControl())                                                                                      
                                                                                                                              
     # I can add marker one by one on the map                                                                                 
     for latlon in coordinates_with_ip:                                                                                       
-        folium.Marker(location= latlon[0:2], popup='Source ip='+ str(latlon[2]), tooltip = "apility.io or virustotal ip API",
-  icon=folium.Icon(color='red', icon='info-sign')).add_to(marker_cluster)                                                    
+        m.add_child(folium.Marker(location= latlon[0:2], popup='Source ip='+ str(latlon[2]), tooltip = "apility.io or virusto
+tal ip API",  icon=folium.Icon(color='red', icon='info-sign')))                                                              
                                                                                                                              
-    folium.LayerControl().add_to(m)                                                                                          
+        # creating folium GeoJson objects from out GeoDataFrames                                                             
+        #pointgeo = folium.GeoJson(m,name='group on map', show=False, tooltip=folium.GeoJsonTooltip(fields=['Name', 'Relation
+', 'City'], aliases=['Name','Relation', 'City'], localize=True)).add_to(m)                                                   
+    m.add_child(folium.LayerControl())                                                                                       
+    # To Add a LayerControl below line                                                                                       
+    #folium.LayerControl().add_to(m)                                                                                         
+    #m.add_child(folium.ClickForMarker(location= latlon[0:2], popup='Source ip='+ str(latlon[2]), icon=folium.Icon(color='red
+', icon='info-sign')))                                                                                                       
+    #folium.Marker(location=[20,10], popup='Source ip=', icon=folium.Icon(color='red', icon='info-sign')).add_to(m)          
     m.save(heatmap_filename)                                                                                                 
     print('Done. heatmap saved as ' + heatmap_filename)                                                                      
     return                                                                                                                   
@@ -139,4 +154,4 @@ def main():
     coords, coordinates_with_ip = get_ip_coordinates(ips_count)                                                              
     generate_and_save_heatmap(coords, coordinates_with_ip)                                                                   
                                                                                                                              
-main()               
+main()        
